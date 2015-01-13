@@ -1,0 +1,185 @@
+<?php
+/**
+ * @file
+ * µRelation UX module.
+ *
+ * @todo Write all the things !
+ * @todo Some API methods
+ * @todo Some other module's integration
+ */
+
+use Urelation\Relation;
+
+const URELATION_FRIEND_BUNDLE = 'friend';
+
+/**
+ * Implements hook_menu().
+ */
+function urelation_friend_menu() {
+  $items = array();
+
+  // For user.
+  $items['user/%user/friends'] = array(
+    'title'            => "Friends",
+    'page callback'    => 'urelation_friend_account_page',
+    'page arguments'   => array(1),
+    'access callback'  => 'urelation_friend_access',
+    'access arguments' => array(1),
+    'type'             => MENU_LOCAL_TASK,
+    'file'             => 'urelation_friend.pages.inc',
+  );
+  $items['user/%user/friends/accepted'] = array(
+    'title'            => "All relations",
+    'type'             => MENU_DEFAULT_LOCAL_TASK,
+    'weight'           => -10,
+  );
+  $items['user/%user/friends/pending'] = array(
+    'title'            => "Pending",
+    'page callback'    => 'urelation_friend_account_pending_page',
+    'page arguments'   => array(1),
+    'access callback'  => 'urelation_friend_access',
+    'access arguments' => array(1),
+    'type'             => MENU_LOCAL_TASK,
+    'file'             => 'urelation_friend.pages.inc',
+    'weight'           => 10,
+  );
+  $items['user/%user/friends/requests'] = array(
+    'title'            => "Requests",
+    'page callback'    => 'urelation_friend_account_requests_page',
+    'page arguments'   => array(1),
+    'access callback'  => 'urelation_friend_access',
+    'access arguments' => array(1),
+    'type'             => MENU_LOCAL_TASK,
+    'file'             => 'urelation_friend.pages.inc',
+    'weight'           => 20,
+  );
+
+  // @todo Relation add
+
+  $actions = array(URELATION_ACTION_ACCEPT, URELATION_ACTION_DELETE, URELATION_ACTION_REFUSE);
+  foreach ($actions as $action) {
+    $items['user/%user/friends/%urelation/' . $action] = array(
+      'title'            => "Relations",
+      'page callback'    => 'urelation_friend_relation_action_page',
+      'page arguments'   => array(3, 4),
+      'access callback'  => 'urelation_access',
+      'access arguments' => array(3, 4),
+      'type'             => MENU_LOCAL_TASK,
+      'file'             => 'urelation_friend.ajax.inc',
+    );
+  }
+
+  // For admin. FIXME In another module.
+  // @todo Relation filterable list
+  // @todo Relation details
+  // @todo Relation type list
+  // @todo Relation type add
+  // @todo Relation type edit
+  // @todo Relation type destroy
+
+  return $items;
+}
+
+/**
+ * Implements hook_urelation_type_info().
+ */
+function urelation_friend_urelation_type_info() {
+  return array(
+    URELATION_FRIEND_BUNDLE => array(
+      'title' => t("Friend"),
+      'is_bidirectional' => true,
+    ),
+  );
+}
+
+/**
+ * Menu access helper.
+ */
+function urelation_friend_access($account) {
+  return user_is_logged_in(); // @todo Better
+}
+
+/**
+ * Implements hook_block_info().
+ */
+function urelation_friend_block_info() {
+  // @todo Add this user to your "relation" block
+  // @todo This friend is your "relation" block
+  return array(
+    'add' => array(
+      'info'  => t("Friend: add as friend"),
+      'cache' => DRUPAL_NO_CACHE,
+    ),
+    // 'status' => array(),
+  );
+}
+
+/**
+ * Implements hook_block_view().
+ */
+function urelation_friend_block_view($delta) {
+  global $user;
+
+  switch ($delta) {
+
+    case 'add':
+      if (($target = menu_get_object('user')) && $target->uid != $user->uid) {
+        return array(
+          'subject' => t("Add"),
+          'content' => drupal_get_form('urelation_friend_add_form', $target, 0),
+        );
+      }
+  }
+}
+
+/**
+ * Implements hook_urelation_links().
+ */
+function urelation_friend_urelation_links(Relation $relation, $account) {
+  $ret = array();
+
+  if ($relation->is_bidirectional) {
+    $actions = array(
+      URELATION_ACTION_DELETE => t("Delete"),
+    );
+  } else {
+    $actions = array(
+      URELATION_ACTION_ACCEPT => t("Accept"),
+      URELATION_ACTION_REFUSE => t("Refuse"),
+    );
+  }
+
+  foreach ($actions as $action => $label) {
+    if (urelation_access($relation, $action, $account)) {
+      $ret[] = array(
+        'title' => $label,
+        'href'  => 'user/' . $account->uid . '/friends/' . $relation->id . '/' . $action . '/ajax',
+        'attributes' => array('class' => array('use-ajax')),
+      );
+    }
+  }
+
+  return $ret;
+}
+
+/**
+ * Add a relation form.
+ */
+function urelation_friend_add_form($form, &$form_state, $target) {
+  global $user;
+  $form['#source'] = $user->uid;
+  $form['#target'] = (int)(is_object($target) ? $target->uid : $target);
+  $form['actions']['#type'] = 'actions';
+  $form['actions']['submit'] = array(
+    '#type' => 'submit',
+    '#value' => t("Add as friend"),
+  );
+  return $form;
+}
+
+/**
+ * Add a relation form submit.
+ */
+function urelation_friend_add_form_submit($form, &$form_state) {
+  urelation_save($form['#source'], $form['#target'], URELATION_FRIEND_BUNDLE);
+}

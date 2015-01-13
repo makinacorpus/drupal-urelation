@@ -1,0 +1,278 @@
+<?php
+
+/**
+ * Implements hook_schema().
+ */
+function urelation_schema() {
+  $schema = array();
+
+  $schema['urelation_type'] = array(
+    'description' => "Relationship types",
+    'fields' => array(
+      'id' => array(
+        'description' => "Primary identifier",
+        'type'        => 'serial',
+        'not null'    => true,
+      ),
+      'bundle' => array(
+        'description' => "Human readable identifier",
+        'type'        => 'varchar',
+        'length'      => 32,
+        'not null'    => true,
+      ),
+      'title' => array(
+        'description' => "Human readable title",
+        'type'        => 'varchar',
+        'length'      => 255,
+        'not null'    => true,
+      ),
+      'module' => array(
+        'description' => "Module name this relationship type comes from",
+        'type'        => 'varchar',
+        'length'      => 64,
+        'not null'    => true,
+        'default'     => 'urelation',
+      ),
+      'is_bidirectional' => array(
+        'description' => "Does this type requires a bi-directional relationship",
+        'type'        => 'int',
+        'not null'    => true,
+        'default'     => 0,
+      ),
+      'is_active' => array(
+        'description' => "Is this type active",
+        'type'        => 'int',
+        'not null'    => true,
+        'default'     => 0,
+      ),
+    ),
+    'primary key' => array('id'),
+    'unique keys' => array(
+      'urelation_type_key' => array('bundle'),
+    ),
+  );
+
+  $schema['urelation'] = array(
+    'description' => "Relationhips",
+    'fields' => array(
+      'id' => array(
+        'description' => "Primary identifier (not sure this really will serve anything else than the entity module)",
+        'type'        => 'serial',
+        'not null'    => true,
+      ),
+      'type' => array(
+        'description' => "Default relationship type (defaults provide something for lazy people)",
+        'type'        => 'int',
+        'not null'    => true,
+        'default'     => 0,
+      ),
+      'source' => array(
+        'description' => "Account who created this",
+        'type'        => 'int',
+        'not null'    => true,
+      ),
+      'target' => array(
+        'description' => "Account target",
+        'type'        => 'int',
+        'not null'    => true,
+      ),
+      'is_bidirectional' => array(
+        'description' => "Is the relationship approved and valid",
+        'type'        => 'int',
+        'not null'    => true,
+        'default'     => 0,
+      ),
+      'date_created' => array(
+        'mysql_type' => 'datetime',
+        'pgsql_type' => 'timestamp',
+        'type'       => 'varchar',
+        'length'     => 16,
+        'not null'   => false,
+      ),
+      'date_accepted' => array(
+        'mysql_type' => 'datetime',
+        'pgsql_type' => 'timestamp',
+        'type'       => 'varchar',
+        'length'     => 16,
+        'not null'   => false,
+      ),
+    ),
+    'primary key' => array('id'),
+    'unique keys' => array(
+      'urelation_key' => array('type', 'source', 'target'),
+      'urelation_field' => array('source', 'type'),
+    ),
+    'indexes' => array(
+      'urelation_query_idx' => array('type', 'source'),
+    ),
+  );
+
+  return $schema;
+}
+
+/**
+ * Implements hook_field_schema().
+ */
+function urelation_field_schema($field) {
+  // This will allow other modules to introspect our cached data.
+  // In there, we actually just repeat data from the actual schema
+  // but incomplete.
+  switch ($field['type']) {
+
+    case URELATION_FIELD:
+      return array(
+        'columns' => array(
+          'id' => array(
+            'type'        => 'int',
+            'not null'    => true,
+          ),
+          'type' => array(
+            'type'        => 'int',
+            'not null'    => true,
+            'default'     => 0,
+          ),
+          'source' => array(
+            'type'        => 'int',
+            'not null'    => true,
+          ),
+          'target' => array(
+            'type'        => 'int',
+            'not null'    => true,
+          ),
+          'is_bidirectional' => array(
+            'type'        => 'int',
+            'not null'    => true,
+            'default'     => 0,
+          ),
+        ),
+        'indexes' => array(),
+        'foreign keys' => array(),
+      );
+  }
+}
+
+/**
+ * Install cache field.
+ */
+function urelation_install_field() {
+
+  module_load_include('inc', 'field', 'field.crud');
+  module_load_include('inc', 'urelation', 'urelation.field');
+
+  $field = array(
+    'field_name'  => URELATION_FIELD,
+    'type'        => URELATION_FIELD,
+    'cardinality' => FIELD_CARDINALITY_UNLIMITED,
+    'locked'      => true,
+    // 'storage'     => array('type' => 'null'), // @todo
+  );
+  $instance = array(
+    'field_name'  => URELATION_FIELD,
+    'entity_type' => 'user',
+    'bundle'      => 'user'
+  );
+
+  if (field_info_field(URELATION_FIELD)) {
+    field_update_field($field);
+  } else {
+    field_create_field($field);
+  }
+
+  if (field_info_instance('user', URELATION_FIELD, 'user')) {
+    field_update_instance($instance);
+  } else {
+    field_create_instance($instance);
+  }
+}
+
+/**
+ * Implements hook_install().
+ */
+function urelation_install() {
+  urelation_install_field();
+}
+
+/**
+ * Implements hook_uninstall().
+ */
+function urelation_uninstall() {
+
+  module_load_include('inc', 'field', 'field.crud');
+  module_load_include('inc', 'urelation', 'urelation.field');
+
+  if ($instance = field_info_instance('user', URELATION_FIELD, 'user')) {
+    field_delete_instance($instance);
+  }
+  if (field_info_field(URELATION_FIELD)) {
+    field_delete_field(URELATION_FIELD);
+  }
+}
+
+/**
+ * Implements hook_modules_enabled().
+ */
+function urelation_modules_enabled($modules) {
+  urelation_tx(function () use ($modules) {
+    foreach ($modules as $module) {
+      if ($types = module_invoke($module, 'urelation_type_info')) {
+        foreach ($types as $bundle => $type) {
+          db_merge('urelation_type')
+            ->key(array(
+              'bundle' => $bundle,
+            ))
+            ->fields(array(
+              'title' => $type['title'],
+              'module' => $module,
+              'is_active' => 1,
+              'is_bidirectional' => (int)(bool)$type['is_bidirectional'],
+            ))
+            ->execute();
+        }
+      }
+    }
+    entity_info_cache_clear();
+  });
+}
+
+/**
+ * Implements hook_modules_disabled().
+ */
+function urelation_modules_disabled($modules) {
+  urelation_tx(function () use ($modules) {
+    db_update('relation_type')
+      ->fields(array('is_active' => 0))
+      ->condition('module', $modules)
+      ->execute();
+    entity_info_cache_clear();
+  });
+}
+
+/**
+ * Implements hook_module_uninstalled().
+ */
+function urelation_modules_uninstalled($modules) {
+  urelation_tx(function () use ($modules) {
+    $idList = db_select('relation_type', 'r')
+      ->fields('r', array('id'))
+      ->condition('r.module', $modules)
+      ->execute()
+      ->fetchCol();
+    db_delete('relation')
+      ->condition('type', $idList)
+      ->execute();
+    db_delete('relation_type')
+      ->condition('module', $modules)
+      ->execute();
+  });
+  entity_info_cache_clear();
+}
+
+/**
+ * Adds a missing index for field load and associated field.
+ */
+function urelation_update_7001() {
+  urelation_install_field();
+  if (!db_index_exists('urelation', 'urelation_field')) {
+    db_add_index('urelation', 'urelation_field', array('source', 'type'));
+  }
+}

@@ -1,0 +1,438 @@
+<?php
+/**
+ * @file
+ * µRelation module.
+ *
+ * @todo Write all the things !
+ * @todo Some other module's integration
+ */
+
+use Urelation\Relation;
+
+/**
+ * *SQL DATETIME PHP date format (this is a PHP date() format).
+ */
+const URELATION_PHP_DATETIME = 'Y-m-d H:i:s';
+
+/**
+ * Relationship entity type.
+ */
+const URELATION_ENTITY_TYPE = 'urelation';
+
+/**
+ * Relationship entity type.
+ */
+const URELATION_BUNDLE_DEFAULT = 'default';
+
+/**
+ * Relation action: accept.
+ */
+const URELATION_ACTION_ACCEPT = 'accept';
+
+/**
+ * Relation action: accept.
+ */
+const URELATION_ACTION_DELETE = 'delete';
+
+/**
+ * Relation action: refuse.
+ */
+const URELATION_ACTION_REFUSE = 'refuse';
+
+/**
+ * Relation action: accept.
+ */
+const URELATION_ACTION_VIEW = 'view';
+
+/**
+ * Relationship default view mode.
+ */
+const URELATION_VIEW_MODE_DEFAULT = 'default';
+
+/**
+ * Permission to administer relation types.
+ */
+const URELATION_PERM_USE = 'urelation use';
+
+/**
+ * Permission to administer relation types.
+ */
+const URELATION_PERM_TYPE_ADMIN = 'urelation type admin';
+
+/**
+ * User entity view mode.
+ */
+const URELATION_USER_VIEW_MODE = 'default';
+
+/**
+ * Because core is stupid.
+ */
+require_once __DIR__ . '/urelation.field.inc';
+
+/**
+ * Implements hook_entity_info().
+ */
+function urelation_entity_info() {
+  $ret = array(
+    URELATION_ENTITY_TYPE => array(
+      'label'            => t("Relationship"),
+      'entity class'     => '\Urelation\Relation',
+      'controller class' => '\Urelation\Controller',
+      'base table'       => 'urelation',
+      'entity keys' => array(
+        'id'             => 'id',
+        'bundle'         => 'bundle',
+      ),
+      'bundles' => array(
+        0 => array(
+          'label'        => t("Contact"),
+          'description'  => t("Single non bi-directional contact"),
+        ),
+      ),
+    ),
+  );
+  //@todo Load types as bundles
+
+  return $ret;
+}
+
+/**
+ * Implements hook_permission().
+ */
+function urelation_permission() {
+  return array(
+    URELATION_PERM_USE => array(
+      'title'   => t("Have relationships"),
+    ),
+    URELATION_PERM_TYPE_ADMIN => array(
+      'title'   => t("Administer relationship types"),
+      'warning' => t("By managing relationship types, users can cause data loss."),
+    ),
+  );
+}
+
+/**
+ * Implements hook_theme().
+ */
+function urelation_theme() {
+  return array(
+    URELATION_ENTITY_TYPE => array(
+      'template' => 'urelation',
+      'render element' => 'elements',
+    ),
+  );
+}
+
+/**
+ * Relation access helper, here lies access rights logic.
+ *
+ * @param Relation $relation
+ * @param string $action
+ * @param stdClass $account
+ *
+ * @return bool
+ */
+function urelation_access(Relation $relation, $action = URELATION_ACTION_VIEW, $account = null) {
+
+  if (null === $account) {
+    $account = user_load($GLOBALS['user']->uid);
+  }
+  if (!user_access(URELATION_PERM_USE, $account)) {
+    return false;
+  }
+
+  switch ($action) {
+
+    case URELATION_ACTION_ACCEPT:
+      return (!$relation->is_bidirectional && empty($relation->date_accepted) && $account->uid != $relation->source);
+
+    case URELATION_ACTION_DELETE:
+      return ($account->uid == $relation->source || $account->uid == $relation->target);
+
+    case URELATION_ACTION_REFUSE:
+      return (!$relation->is_bidirectional && empty($relation->date_accepted) && $account->uid == $relation->target);
+      break;
+
+    case URELATION_ACTION_VIEW:
+      return ($account->uid == $relation->source || $account->uid == $relation->target);
+      break;
+  }
+}
+
+/**
+ * Load a relationship
+ *
+ * @param int $id
+ *
+ * @return Relation
+ */
+function urelation_load($id) {
+  if ($list = entity_get_controller(URELATION_ENTITY_TYPE)->load(array($id))) {
+    return reset($list);
+  }
+  return false;
+}
+
+/**
+ * Load multiple relationships
+ *
+ * @param int $id
+ *
+ * @return Relation[]
+ */
+function urelation_load_multiple(array $idList) {
+  return entity_get_controller(URELATION_ENTITY_TYPE)->load($idList);
+}
+
+/**
+ * Display a single relation
+ *
+ * @param Relation $relation
+ */
+function urelation_view(Relation $relation, $view_mode = URELATION_VIEW_MODE_DEFAULT) {
+  $build = urelation_view_multiple(array($relation), $view_mode);
+  return reset($build);
+}
+
+/**
+ * Display a list of relations
+ *
+ * @param Relation[] $relation
+ */
+function urelation_view_multiple(array $relations, $view_mode = URELATION_VIEW_MODE_DEFAULT) {
+
+  $build = array();
+
+  // Preload all users for performance.
+  $uidMap = array();
+  foreach ($relations as $relation) {
+    $uidMap[$relation->target] = true;
+    $uidMap[$relation->source] = true;
+  }
+  $uidMap = user_load_multiple(array_keys($uidMap));
+
+  entity_prepare_view(URELATION_ENTITY_TYPE, $relations);
+  foreach ($relations as $relation) {
+    $current = array(
+      '#theme'     => URELATION_ENTITY_TYPE,
+      '#view_mode' => $view_mode,
+      '#relation'  => $relation,
+      '#source'    => $uidMap[$relation->source],
+      '#target'    => $uidMap[$relation->target],
+    );
+    $type = URELATION_ENTITY_TYPE; // Only variables can passed by reference.
+    drupal_alter(array('urelation_view', 'entity_view'), $current, $type);
+    $build[$relation->id] = $current;
+  }
+
+  return $build;
+}
+
+/**
+ * Load a relationship type
+ *
+ * @param string $bundle
+ *
+ * @return stdClass
+ *   Object describing the relationship type.
+ */
+function urelation_type_load($bundle) {
+  $list = urelation_type_list();
+  if (isset($list[$bundle])) {
+    return $list[$bundle];
+  }
+  return false;
+}
+
+/**
+ * Get all relationship types.
+ *
+ * @param string $reset
+ *   Should it reset internal cache before fetch.
+ *
+ * @return stdClass[]
+ *   All relationship type objects.
+ */
+function urelation_type_list($reset = false) {
+  $cache = &drupal_static(__FUNCTION__);
+  if ($reset || null === $cache) {
+    // @todo improve this
+    $cache = db_select('urelation_type', 'ur')
+      ->fields('ur')
+      ->execute()
+      ->fetchAllAssoc('bundle');
+  }
+  return $cache;
+}
+
+/**
+ * Proceed with execution in a transaction.
+ *
+ * @param callable $callable
+ */
+function urelation_tx($callable) {
+  $tx = null;
+  try {
+    $ret = call_user_func($callable);
+    unset($tx); // Explicit commit.
+    return $ret;
+  } catch (Exception $e) {
+    if ($tx) {
+      try {
+        $tx->rollback();
+      } catch (Exception $e2) {}
+    }
+    throw $e;
+  }
+}
+
+/**
+ * Save or update a relation between two accounts
+ *
+ * @param int $source
+ *   Relationship owner user account identifier.
+ * @param int $target
+ *   Relationship target user account identifier.
+ * @param string $bundle
+ *   Relation ship type bundle.
+ * @param bool $is_bidirectional
+ *   Is this relation bidirectional.
+ *
+ * @return int
+ *   SAVED_NEW or SAVED_UPDATED.
+ */
+function urelation_save($source, $target, $bundle, $is_bidirectional = false) {
+  return urelation_tx(function () use ($source, $target, $bundle, $is_bidirectional) {
+
+    $type = urelation_type_load($bundle);
+    $controller = entity_get_controller(URELATION_ENTITY_TYPE);
+
+    $existing = db_select('urelation', 'r')
+      ->fields('r')
+      ->condition('r.source', $source)
+      ->condition('r.target', $target)
+      ->condition('r.type', $type->id)
+      ->range(0, 1)
+      ->execute()
+      ->fetch();
+
+    $date_created = date(URELATION_PHP_DATETIME);
+    $data = array(
+      'is_bidirectional' => (int)(bool)$is_bidirectional,
+      'date_created'     => $date_created,
+      'date_accepted'    => $is_bidirectional ? $date_created : null,
+    );
+    if ($existing) {
+      // If an entry already exists some fields cannot be overriden.
+      if (!empty($existing->date_accepted)) {
+        $data['date_accepted'] = $existing->date_accepted;
+      }
+    }
+
+    // Both entries must be merged in a coherent state altogether.
+    db_merge('urelation')
+      ->key(array(
+        'type'   => $type->id,
+        'source' => $source,
+        'target' => $target,
+      ))
+      ->fields($data)
+      ->execute();
+
+    if ($is_bidirectional) {
+      db_merge('urelation')
+        ->key(array(
+          'type'   => $type->id,
+          'source' => $target,
+          'target' => $source,
+        ))
+        ->fields($data)
+        ->execute();
+    }
+
+    if ($existing) {
+      $controller->resetCache();
+      module_invoke_all('urelation_update', $source, $target, $bundle, $is_bidirectional); // @todo
+      return SAVED_UPDATED;
+    } else {
+      $controller->resetCache();
+      module_invoke_all('urelation_insert', $source, $target, $bundle, $is_bidirectional); // @todo
+      return SAVED_NEW;
+    }
+  });
+}
+
+/**
+ * Delete a relationship between two users
+ *
+ * @param int $uid1
+ *   User account identifier.
+ * @param int $uid2
+ *   User account identifier.
+ * @param int $type
+ *   Relationship type.
+ * @param bool $is_bidirectional
+ *   Should we delete relation both sides.
+ *
+ * @return bool
+ *   True if something existed before false else, mostly.
+ */
+function urelation_delete($uid1, $uid2, $type = 0, $is_bidirectional = false) {
+  return urelation_tx(function () use ($uid1, $uid2, $type, $is_bidirectional) {
+
+    $ret1 = db_delete('urelation')
+      ->condition('source', $uid1)
+      ->condition('target', $uid2)
+      ->condition('type', $type)
+      ->execute();
+
+    if ($is_bidirectional) {
+      $ret2 = db_delete('urelation')
+        ->condition('source', $uid2)
+        ->condition('target', $uid1)
+        ->condition('type', $type)
+        ->execute();
+    }
+
+    return $ret1 || $ret2;
+
+    unset($tx); // Explicit commit.
+
+    if ($existing) {
+      return SAVED_UPDATED;
+    } else {
+      return SAVED_NEW;
+    }
+  });
+}
+
+/**
+ * Get possible actions for given relation for given user
+ *
+ * @param Relation $relation
+ * @param stdClass $account
+ *
+ * @return array[]
+ *   Array of links each must contain at least 'title' and 'href' attributes.
+ */
+function urelation_relation_links(Relation $relation, $account) {
+  $links = module_invoke_all('urelation_links', $relation, $account);
+  drupal_alter('urelation_links', $relation, $account);
+  return $links;
+}
+
+/**
+ * Implements hook_preprocess_TEMPLATE().
+ */
+function template_preprocess_urelation(&$variables) {
+  $variables['relation'] = $relation = $variables['elements']['#relation'];
+  $variables['target'] = $target = $variables['elements']['#target'];
+  $variables['target_picture'] = array('#theme' => 'user_picture', '#account' => $target);
+  $variables['target_name'] = array('#theme' => 'username', '#account' => $target);
+  $variables['is_active'] = $relation->is_bidirectional;
+  if ($links = urelation_relation_links($relation, $GLOBALS['user'])) {
+    $variables['links'] = array('#theme' => 'links', '#links' => $links);
+  } else {
+    $variables['links'] = '';
+  }
+}

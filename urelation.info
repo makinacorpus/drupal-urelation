@@ -1,0 +1,9 @@
+name = "µRelation"
+description = "Micro module to manage user relationships in sane way"
+package = User management
+version = VERSION
+core = 7.x
+autoload[psr-0][Urelation] = src
+dependencies[] = autoloader
+dependencies[] = field
+stylesheets[all][] = urelation.css

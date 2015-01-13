@@ -1,0 +1,7 @@
+name = "µRelation Friend"
+description = "µRelation friendship management module"
+package = User management
+version = VERSION
+core = 7.x
+dependencies[] = minidialog
+dependencies[] = urelation

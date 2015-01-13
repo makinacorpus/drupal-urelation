@@ -1,0 +1,18 @@
+.relation {
+  padding: 10px;
+  border: 1px solid #ccc;
+  width: 310px;
+  display: inline-block;
+  margin-right: 10px
+}
+.relation .user-picture, .relation .user-info, .relation .actions {
+  display: inline-block;
+  vertical-align: middle;
+}
+.relation .user-picture img {
+  margin: 0;
+  margin-right: 10px;
+}
+.relation .actions {
+  display: inline-block;
+}
